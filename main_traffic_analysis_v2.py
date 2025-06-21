@@ -41,6 +41,7 @@ class VideoProcessor:
         self.iou_threshold = iou_threshold
         self.model = YOLO(source_weights_path)
         self.tracker = sv.ByteTrack()
+        self.smoother = sv.DetectionsSmoother()
 
         SELECTED_CLASS_NAMES = ['car', 'motorcycle', 'bus', 'truck']
         self.CLASS_NAMES_DICT = self.model.names
@@ -195,6 +196,8 @@ class VideoProcessor:
     def process_frame(self, frame: np.ndarray) -> tuple[np.ndarray, dict]:
         """Processes a frame using the YOLO model and tracker for entry detection only."""
         try:
+            # Time YOLO inference
+            inference_start = time.time()
             results = self.model(
                 frame,
                 # imgsz=640,
@@ -206,16 +209,36 @@ class VideoProcessor:
                 verbose=False,
             )
             detections: sv.Detections = sv.Detections.from_ultralytics(results[0])
+            inference_time = (time.time() - inference_start) * 1000
+            # Time tracking
+            tracking_start = time.time()
             detections = self.tracker.update_with_detections(detections)
+            tracking_time = (time.time() - tracking_start) * 1000
 
+            detections = self.smoother.update_with_detections(detections)
+
+            # Time zone processing
+            zone_start = time.time()
             for i, zone in enumerate(self.zones_in):
                 mask = zone.trigger(detections=detections)
                 detections_in_zone = detections[mask]
                 for tracker_id in detections_in_zone.tracker_id:
                     self.zone_seen_tracker_ids[i].add(tracker_id)
-
+            zone_time = (time.time() - zone_start) * 1000
+            # Time annotation
+            annotation_start = time.time()
             annotated_frame = self.annotate_frame(frame, detections)
-            return annotated_frame, {}
+            annotation_time = (time.time() - annotation_start) * 1000
+            # Prepare timing information for display in process_video
+            total_time = inference_time + tracking_time + zone_time + annotation_time
+            timing_info = {
+                'inference': inference_time,
+                'tracking': tracking_time,
+                'zones': zone_time,
+                'annotation': annotation_time,
+                'total': total_time
+            }
+            return annotated_frame, timing_info
 
         except Exception as e:
             logger.error(f"Error processing frame: {e}")
