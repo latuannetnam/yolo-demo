@@ -97,6 +97,7 @@ class VideoProcessor:
             )
             for i, zone in enumerate(self.zones_in)
         ]
+        self.zone_seen_tracker_ids = [set() for _ in self.zones_in]
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
@@ -156,9 +157,12 @@ class VideoProcessor:
         """Annotates a frame with detections and entry zones."""
         annotated_frame = frame.copy()
 
-        for i, zone_annotator in enumerate(self.zone_annotators):
+        for i, (zone, zone_annotator) in enumerate(
+            zip(self.zones_in, self.zone_annotators)
+        ):
             annotated_frame = zone_annotator.annotate(
-                scene=annotated_frame, label=f"Zone {i}"
+                scene=annotated_frame,
+                label=f"Zone {i}: {len(self.zone_seen_tracker_ids[i])} ({zone.current_count})",
             )
 
         labels = []
@@ -204,8 +208,11 @@ class VideoProcessor:
             detections: sv.Detections = sv.Detections.from_ultralytics(results[0])
             detections = self.tracker.update_with_detections(detections)
 
-            for zone in self.zones_in:
-                zone.trigger(detections=detections)
+            for i, zone in enumerate(self.zones_in):
+                mask = zone.trigger(detections=detections)
+                detections_in_zone = detections[mask]
+                for tracker_id in detections_in_zone.tracker_id:
+                    self.zone_seen_tracker_ids[i].add(tracker_id)
 
             annotated_frame = self.annotate_frame(frame, detections)
             return annotated_frame, {}
