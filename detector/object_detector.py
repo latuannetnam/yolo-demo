@@ -8,6 +8,8 @@ import torch
 import os
 from typing import List, Tuple, Dict, Any
 from loguru import logger
+import supervision as sv
+from supervision.annotators.utils import ColorLookup
 
 from config import Config
 
@@ -22,6 +24,19 @@ class BaseObjectDetector:
         self.model_name = ""
         self.model_type = ""
         self._load_model()
+
+        self.tracker = sv.ByteTrack()
+        self.smoother = sv.DetectionsSmoother()
+        self.box_annotator = sv.BoxAnnotator(color_lookup=ColorLookup.INDEX)
+        self.label_annotator = sv.LabelAnnotator(
+            text_color=sv.Color.BLACK, color_lookup=ColorLookup.INDEX
+        )
+        self.trace_annotator = sv.TraceAnnotator(
+            position=sv.Position.CENTER,
+            trace_length=30,
+            thickness=2,
+            color_lookup=ColorLookup.INDEX,
+        )
     
     def get_model_info(self) -> Tuple[str, str]:
         return self.model_name, self.model_type
@@ -40,7 +55,7 @@ class BaseObjectDetector:
         """Load the YOLO model."""
         raise NotImplementedError("This method should be implemented by subclasses.")
     
-    def detect(self, frame: np.ndarray) -> List[Dict[str, Any]]:
+    def detect(self, frame: np.ndarray) -> sv.Detections:
         """
         Perform object detection on a frame.
         
@@ -51,7 +66,7 @@ class BaseObjectDetector:
             List of detection dictionaries containing bbox, confidence, class info
         """
         if self.model is None:
-            return []
+            return sv.Detections.empty()
         
         try:
             # Run inference
@@ -63,48 +78,16 @@ class BaseObjectDetector:
                 verbose=False
             )
             
-            detections = []
-            
-            if results and len(results) > 0:
-                result = results[0]
-                
-                if result.boxes is not None:
-                    # Handle both tensor and numpy array cases
-                    boxes = result.boxes.xyxy
-                    confidences = result.boxes.conf
-                    class_ids = result.boxes.cls
-                    
-                    # Convert to numpy arrays safely
-                    if isinstance(boxes, torch.Tensor):
-                        boxes = boxes.cpu().numpy()
-                    if isinstance(confidences, torch.Tensor):
-                        confidences = confidences.cpu().numpy()
-                    if isinstance(class_ids, torch.Tensor):
-                        class_ids = class_ids.cpu().numpy()
-                    
-                    # Ensure class_ids are integers
-                    class_ids = class_ids.astype(int)
-                    
-                    for box, conf, class_id in zip(boxes, confidences, class_ids):
-                        if isinstance(box, torch.Tensor):
-                            box = box.cpu().numpy()
-                        x1, y1, x2, y2 = box.astype(int)
-                        
-                        detection = {
-                            'bbox': (x1, y1, x2, y2),
-                            'confidence': float(conf),
-                            'class_id': int(class_id),
-                            'class_name': self.class_names.get(class_id, f'Class_{class_id}')
-                        }
-                        detections.append(detection)
-            
+            detections = sv.Detections.from_ultralytics(results[0])
+            detections = self.tracker.update_with_detections(detections)
+            detections = self.smoother.update_with_detections(detections)
             return detections
             
         except Exception as e:
             logger.error(f"Detection error: {e}")
-            return []
+            return sv.Detections.empty()
     
-    def draw_detections(self, frame: np.ndarray, detections: List[Dict[str, Any]], 
+    def draw_detections(self, frame: np.ndarray, detections: sv.Detections, 
                        camera_id: int = 0) -> np.ndarray:
         """
         Draw bounding boxes and labels on the frame.
@@ -117,49 +100,34 @@ class BaseObjectDetector:
         Returns:
             Frame with drawn detections
         """
-        if not detections:
+        if len(detections) == 0:
             return frame
-        
-        # Select color based on camera ID
-        color = Config.BBOX_COLORS[camera_id % len(Config.BBOX_COLORS)]
-        
-        for detection in detections:
-            x1, y1, x2, y2 = detection['bbox']
-            confidence = detection['confidence']
-            class_name = detection['class_name']
-            
-            # Draw bounding box
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            
-            # Prepare label text
-            label = f"{class_name}: {confidence:.2f}"
-            
-            # Calculate label size and position
-            (label_width, label_height), baseline = cv2.getTextSize(
-                label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1
+
+        labels = []
+        if detections.class_id is not None and detections.confidence is not None:
+            for i in range(len(detections)):
+                class_id = detections.class_id[i]
+                confidence = detections.confidence[i]
+                
+                label_parts = []
+
+                if detections.tracker_id is not None:
+                    tracker_id = detections.tracker_id[i]
+                    label_parts.append(f"#{tracker_id}")
+                
+                label_parts.append(self.class_names.get(class_id, f"ID {class_id}"))
+                label_parts.append(f"{confidence:.2f}")
+
+                labels.append(" ".join(label_parts))
+
+        annotated_frame = self.trace_annotator.annotate(frame.copy(), detections)
+        annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
+        if labels:
+            annotated_frame = self.label_annotator.annotate(
+                annotated_frame, detections, labels
             )
-            
-            # Draw label background
-            cv2.rectangle(
-                frame,
-                (x1, y1 - label_height - baseline - 10),
-                (x1 + label_width, y1),
-                color,
-                cv2.FILLED
-            )
-            
-            # Draw label text
-            cv2.putText(
-                frame,
-                label,
-                (x1, y1 - baseline - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 255),
-                1
-            )
-        
-        return frame
+
+        return annotated_frame
 
 
 class ObjectDetector(BaseObjectDetector):
