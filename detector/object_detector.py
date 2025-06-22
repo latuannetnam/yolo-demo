@@ -42,6 +42,8 @@ class ObjectDetector:
             color_lookup=ColorLookup.INDEX,
         )
 
+        self.heat_map_annotator = sv.HeatMapAnnotator()
+
         self._load_model()
 
     def _calculate_slice_dimensions(self, frame_shape: Tuple[int, int]) -> Tuple[Tuple[int, int], Tuple[int, int]]:
@@ -287,6 +289,7 @@ class ObjectDetector:
 
         annotated_frame = self.trace_annotator.annotate(frame.copy(), detections)
         annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
+        annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
         if labels:
             annotated_frame = self.label_annotator.annotate(
                 annotated_frame, detections, labels
