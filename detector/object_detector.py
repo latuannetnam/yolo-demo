@@ -31,15 +31,15 @@ class ObjectDetector:
 
         self.tracker = sv.ByteTrack()
         self.smoother = sv.DetectionsSmoother()
-        self.box_annotator = sv.BoxAnnotator(color_lookup=ColorLookup.INDEX)
+        self.box_annotator = sv.BoxAnnotator(color_lookup=ColorLookup.CLASS)
         self.label_annotator = sv.LabelAnnotator(
-            text_color=sv.Color.BLACK, color_lookup=ColorLookup.INDEX
+            text_color=sv.Color.BLACK, color_lookup=ColorLookup.CLASS
         )
         self.trace_annotator = sv.TraceAnnotator(
             position=sv.Position.CENTER,
             trace_length=30,
             thickness=2,
-            color_lookup=ColorLookup.INDEX,
+            color_lookup=ColorLookup.CLASS,
         )
 
         self.heat_map_annotator = sv.HeatMapAnnotator()
