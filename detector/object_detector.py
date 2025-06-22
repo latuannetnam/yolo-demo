@@ -13,9 +13,9 @@ from supervision.annotators.utils import ColorLookup
 
 from config import Config
 
-class BaseObjectDetector:
-    """Base class for YOLO-based object detectors."""
-    
+class ObjectDetector:
+    """YOLOv11-based object detector that can handle both PyTorch and TensorRT models."""
+
     def __init__(self):
         """Initialize the object detector."""
         self.model = None
@@ -24,6 +24,7 @@ class BaseObjectDetector:
         self.model_name = ""
         self.model_type = ""
         self._load_model()
+        self._init_slicer()
 
         self.tracker = sv.ByteTrack()
         self.smoother = sv.DetectionsSmoother()
@@ -37,10 +38,34 @@ class BaseObjectDetector:
             thickness=2,
             color_lookup=ColorLookup.INDEX,
         )
-    
+
+    def _init_slicer(self):
+        """Initialize the inference slicer."""
+        self.slicer = sv.InferenceSlicer(
+            # slice_wh=(416, 416),
+            # iou_threshold=0.5,
+            callback=self._perform_inference,
+            thread_workers=Config.SLICE_WORKERS,
+        )
+        logger.info(f"Initialized inference slicer with {Config.SLICE_WORKERS} workers")
+
+    def _perform_inference(self, frame_slice: np.ndarray) -> sv.Detections:
+        """Perform inference on a single slice."""
+        if self.model is None:
+            return sv.Detections.empty()
+
+        results = self.model.predict(
+            frame_slice,
+            conf=Config.MODEL_CONFIDENCE,
+            iou=Config.MODEL_IOU_THRESHOLD,
+            device=self.device,
+            verbose=False
+        )
+        return sv.Detections.from_ultralytics(results[0])
+
     def get_model_info(self) -> Tuple[str, str]:
         return self.model_name, self.model_type
-    
+
     def _setup_device(self) -> str:
         """Setup the computation device (GPU/CPU)."""
         if Config.USE_GPU and Config.validate_gpu_availability():
@@ -50,88 +75,6 @@ class BaseObjectDetector:
             device = "cpu"
             logger.info("Using CPU for inference")
         return device
-    
-    def _load_model(self) -> None:
-        """Load the YOLO model."""
-        raise NotImplementedError("This method should be implemented by subclasses.")
-    
-    def detect(self, frame: np.ndarray) -> sv.Detections:
-        """
-        Perform object detection on a frame.
-        
-        Args:
-            frame: Input image frame
-            
-        Returns:
-            List of detection dictionaries containing bbox, confidence, class info
-        """
-        if self.model is None:
-            return sv.Detections.empty()
-        
-        try:
-            # Run inference
-            results = self.model.predict(
-                frame,
-                conf=Config.MODEL_CONFIDENCE,
-                iou=Config.MODEL_IOU_THRESHOLD,
-                device=self.device,
-                verbose=False
-            )
-            
-            detections = sv.Detections.from_ultralytics(results[0])
-            detections = self.tracker.update_with_detections(detections)
-            detections = self.smoother.update_with_detections(detections)
-            return detections
-            
-        except Exception as e:
-            logger.error(f"Detection error: {e}")
-            return sv.Detections.empty()
-    
-    def draw_detections(self, frame: np.ndarray, detections: sv.Detections, 
-                       camera_id: int = 0) -> np.ndarray:
-        """
-        Draw bounding boxes and labels on the frame.
-        
-        Args:
-            frame: Input image frame
-            detections: List of detection dictionaries
-            camera_id: Camera identifier for color selection
-            
-        Returns:
-            Frame with drawn detections
-        """
-        if len(detections) == 0:
-            return frame
-
-        labels = []
-        if detections.class_id is not None and detections.confidence is not None:
-            for i in range(len(detections)):
-                class_id = detections.class_id[i]
-                confidence = detections.confidence[i]
-                
-                label_parts = []
-
-                if detections.tracker_id is not None:
-                    tracker_id = detections.tracker_id[i]
-                    label_parts.append(f"#{tracker_id}")
-                
-                label_parts.append(self.class_names.get(class_id, f"ID {class_id}"))
-                label_parts.append(f"{confidence:.2f}")
-
-                labels.append(" ".join(label_parts))
-
-        annotated_frame = self.trace_annotator.annotate(frame.copy(), detections)
-        annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
-        if labels:
-            annotated_frame = self.label_annotator.annotate(
-                annotated_frame, detections, labels
-            )
-
-        return annotated_frame
-
-
-class ObjectDetector(BaseObjectDetector):
-    """YOLOv11-based object detector that can handle both PyTorch and TensorRT models."""
 
     def _load_model(self) -> None:
         """Load the YOLOv11 model, handling both .pt and .engine files."""
@@ -202,16 +145,16 @@ class ObjectDetector(BaseObjectDetector):
                 raise FileNotFoundError(f"PyTorch model not found at {pt_path} for TensorRT export.")
 
             logger.info(f"Exporting {pt_path} to TensorRT format...")
-            
+
             model = YOLO(pt_path)
-            
+
             model.export(
                 format="engine",
                 half=True,
             )
-            
+
             logger.info(f"TensorRT export completed successfully for {engine_path}")
-            
+
         except Exception as e:
             logger.error(f"Failed to export to TensorRT from {pt_path}: {e}")
             raise
@@ -228,3 +171,70 @@ class ObjectDetector(BaseObjectDetector):
         except Exception as e:
             logger.error(f"Failed to load fallback model from {pt_path}: {e}")
             raise
+
+    def detect(self, frame: np.ndarray) -> sv.Detections:
+        """
+        Perform object detection on a frame.
+
+        Args:
+            frame: Input image frame
+
+        Returns:
+            List of detection dictionaries containing bbox, confidence, class info
+        """
+        if self.model is None:
+            return sv.Detections.empty()
+
+        try:
+            # Run inference
+            detections = self.slicer(frame)
+
+            detections = self.tracker.update_with_detections(detections)
+            detections = self.smoother.update_with_detections(detections)
+            return detections
+
+        except Exception as e:
+            logger.error(f"Detection error: {e}")
+            return sv.Detections.empty()
+
+    def draw_detections(self, frame: np.ndarray, detections: sv.Detections,
+                       camera_id: int = 0) -> np.ndarray:
+        """
+        Draw bounding boxes and labels on the frame.
+
+        Args:
+            frame: Input image frame
+            detections: List of detection dictionaries
+            camera_id: Camera identifier for color selection
+
+        Returns:
+            Frame with drawn detections
+        """
+        if len(detections) == 0:
+            return frame
+
+        labels = []
+        if detections.class_id is not None and detections.confidence is not None:
+            for i in range(len(detections)):
+                class_id = detections.class_id[i]
+                confidence = detections.confidence[i]
+
+                label_parts = []
+
+                if detections.tracker_id is not None:
+                    tracker_id = detections.tracker_id[i]
+                    label_parts.append(f"#{tracker_id}")
+
+                label_parts.append(self.class_names.get(class_id, f"ID {class_id}"))
+                label_parts.append(f"{confidence:.2f}")
+
+                labels.append(" ".join(label_parts))
+
+        annotated_frame = self.trace_annotator.annotate(frame.copy(), detections)
+        annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
+        if labels:
+            annotated_frame = self.label_annotator.annotate(
+                annotated_frame, detections, labels
+            )
+
+        return annotated_frame
