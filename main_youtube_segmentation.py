@@ -9,7 +9,7 @@ import numpy as np
 from loguru import logger
 import yt_dlp
 from ultralytics import solutions
-
+from utils import get_stream_url
 from config import Config
 
 # Setup logging
@@ -38,43 +38,43 @@ class YouTubeSegmentationSystem:
         logger.info("Shutdown signal received. Stopping system...")
         self.stop()
 
-    def _get_stream_url(self, youtube_url: str) -> str | None:
-        """
-        Get the stream URL for a given YouTube URL.
-        Tries to get the best 1080p mp4 stream, falls back to best available.
-        """
-        logger.info(f"Getting stream URL for {youtube_url}")
+    # def _get_stream_url(self, youtube_url: str) -> str | None:
+    #     """
+    #     Get the stream URL for a given YouTube URL.
+    #     Tries to get the best 1080p mp4 stream, falls back to best available.
+    #     """
+    #     logger.info(f"Getting stream URL for {youtube_url}")
         
-        ydl_opts = {
-            'quiet': True,
-            'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]/best[ext=mp4][vcodec=h264]/best',
-            'noplaylist': True,
-        }
+    #     ydl_opts = {
+    #         'quiet': True,
+    #         'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]/best[ext=mp4][vcodec=h264]/best',
+    #         'noplaylist': True,
+    #     }
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(youtube_url, download=False)
+    #     try:
+    #         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    #             info_dict = ydl.extract_info(youtube_url, download=False)
                 
-                if not info_dict:
-                    logger.error("yt-dlp failed to extract info.")
-                    return None               
+    #             if not info_dict:
+    #                 logger.error("yt-dlp failed to extract info.")
+    #                 return None               
                 
-                formats = info_dict.get('formats', [info_dict])
-                for f in reversed(formats):
-                    if f.get('ext') == 'mp4' and f.get('vcodec') != 'none' and f.get('url') and f.get('height') == 1080:
-                        logger.info(f"Found mp4 stream: {f.get('format_note')}")
-                        return f['url']
+    #             formats = info_dict.get('formats', [info_dict])
+    #             for f in reversed(formats):
+    #                 if f.get('ext') == 'mp4' and f.get('vcodec') != 'none' and f.get('url') and f.get('height') == 1080:
+    #                     logger.info(f"Found mp4 stream: {f.get('format_note')}")
+    #                     return f['url']
                 
-                logger.warning("No direct mp4 stream found. Falling back to the first available stream URL.")
-                if formats and formats[0].get('url'):
-                    return formats[0]['url']
+    #             logger.warning("No direct mp4 stream found. Falling back to the first available stream URL.")
+    #             if formats and formats[0].get('url'):
+    #                 return formats[0]['url']
                 
-                logger.error("Could not find any stream URL.")
-                return None
+    #             logger.error("Could not find any stream URL.")
+    #             return None
 
-        except Exception as e:
-            logger.error(f"yt-dlp failed to get stream URL: {e}")
-            return None
+    #     except Exception as e:
+    #         logger.error(f"yt-dlp failed to get stream URL: {e}")
+    #         return None
 
     def initialize(self) -> bool:
         """Initialize the segmentation system components."""
@@ -98,7 +98,7 @@ class YouTubeSegmentationSystem:
                 return False            
             
             logger.info(f"Getting YouTube video stream from {youtube_url}")
-            stream_url = self._get_stream_url(youtube_url)
+            stream_url = get_stream_url(youtube_url)
 
             if not stream_url:
                 logger.error("Failed to get stream URL. Exiting.")

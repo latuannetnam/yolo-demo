@@ -9,6 +9,50 @@ from typing import Dict, Any, Tuple
 import cv2
 import numpy as np
 from loguru import logger
+import yt_dlp
+
+def get_stream_url(youtube_url: str) -> str | None:
+        """
+        Get the stream URL for a given YouTube URL.
+        Tries to get the best 1080p mp4 stream, falls back to best available.
+        """
+        logger.info(f"Getting stream URL for {youtube_url}")
+        
+        ydl_opts = {
+            'quiet': True,
+            'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]/best[ext=mp4][vcodec=h264]/best',
+            # 'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]',
+            # 'format': 'bestvideo[vcodec^=h264][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][vcodec^=h264][height<=1080]',
+            'noplaylist': True,
+        }
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info_dict = ydl.extract_info(youtube_url, download=False)
+                
+                if not info_dict:
+                    logger.error("yt-dlp failed to extract info.")
+                    return None
+                
+                # if 'url' in info_dict:
+                #     return info_dict['url']
+                
+                formats = info_dict.get('formats', [info_dict])
+                for f in reversed(formats):
+                    if f.get('ext') == 'mp4' and f.get('vcodec') != 'none' and f.get('url') and f.get('height') == 1080:
+                        logger.info(f"Found mp4 stream: {f.get('format_note')}")
+                        return f['url']
+                
+                logger.warning("No direct mp4 stream found. Falling back to the first available stream URL.")
+                if formats and formats[0].get('url'):
+                    return formats[0]['url']
+                
+                logger.error("Could not find any stream URL.")
+                return None
+
+        except Exception as e:
+            logger.error(f"yt-dlp failed to get stream URL: {e}")
+            return None
 
 def check_system_requirements() -> Dict[str, Any]:
     """
