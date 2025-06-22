@@ -49,27 +49,23 @@ class ObjectDetector:
             logger.error("Number of tiles must be a positive integer.")
             return (w, h), (0, 0)
 
-        grid_dim = int(math.sqrt(num_tiles))
-        if grid_dim * grid_dim != num_tiles:
-            logger.warning(
-                f"Number of tiles ({num_tiles}) is not a perfect square. "
-                f"Using grid size of {grid_dim}x{grid_dim}."
-            )
-
-        if grid_dim == 0:
+        if num_tiles == 1:
             return (w, h), (0, 0)
 
-        tiles = (grid_dim, grid_dim)
-        overlap_ratio_wh = (0.2, 0.2)  # 20% overlap
-        logger.info(f"Calculating slice dimensions for {tiles[0]}x{tiles[1]} tiles with {overlap_ratio_wh[0]*100}% overlap")
+        overlap_ratio_h = 0.2  # 20% vertical overlap
 
-        tile_w = math.ceil(w / tiles[1] * (1 + overlap_ratio_wh[0]))
-        tile_h = math.ceil(h / tiles[0] * (1 + overlap_ratio_wh[1]))
+        # Formula to calculate slice height so that tiles cover the whole frame with overlap
+        slice_h = h / (num_tiles - (num_tiles - 1) * overlap_ratio_h)
+        overlap_h = slice_h * overlap_ratio_h
 
-        overlap_w = math.ceil(tile_w * overlap_ratio_wh[0])
-        overlap_h = math.ceil(tile_h * overlap_ratio_wh[1])
+        slice_w = w
+        overlap_w = 0
 
-        return (int(tile_w), int(tile_h)), (int(overlap_w), int(overlap_h))
+        logger.info(
+            f"Calculating slice dimensions for {num_tiles} horizontal tiles with {overlap_ratio_h*100:.0f}% vertical overlap"
+        )
+
+        return (int(slice_w), int(math.ceil(slice_h))), (int(overlap_w), int(math.ceil(overlap_h)))
 
     def _init_slicer(self, frame_shape: Tuple[int, int]):
         """Initialize the inference slicer."""
