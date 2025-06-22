@@ -52,6 +52,7 @@ class Config:
     MODEL_CONFIDENCE = float(os.getenv("MODEL_CONFIDENCE", "0.5"))
     MODEL_IOU_THRESHOLD = float(os.getenv("MODEL_IOU_THRESHOLD", "0.45"))
     SLICE_WORKERS = int(os.getenv("SLICE_WORKERS", "1"))
+    NUM_TILES = int(os.getenv("NUM_TILES", "4"))
     
     # GPU settings
     USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"

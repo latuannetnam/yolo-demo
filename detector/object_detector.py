@@ -10,6 +10,7 @@ from typing import List, Tuple, Dict, Any
 from loguru import logger
 import supervision as sv
 from supervision.annotators.utils import ColorLookup
+import math
 
 from config import Config
 
@@ -24,7 +25,7 @@ class ObjectDetector:
         self.model_name = ""
         self.model_type = ""
         self._load_model()
-        self._init_slicer()
+        self.slicer = None
 
         self.tracker = sv.ByteTrack()
         self.smoother = sv.DetectionsSmoother()
@@ -39,15 +40,48 @@ class ObjectDetector:
             color_lookup=ColorLookup.INDEX,
         )
 
-    def _init_slicer(self):
+    def _calculate_slice_dimensions(self, frame_shape: Tuple[int, int]) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        """Calculate slice and overlap dimensions based on number of tiles in frame."""
+        h, w = frame_shape
+        num_tiles = Config.NUM_TILES
+
+        if num_tiles <= 0:
+            logger.error("Number of tiles must be a positive integer.")
+            return (w, h), (0, 0)
+
+        grid_dim = int(math.sqrt(num_tiles))
+        if grid_dim * grid_dim != num_tiles:
+            logger.warning(
+                f"Number of tiles ({num_tiles}) is not a perfect square. "
+                f"Using grid size of {grid_dim}x{grid_dim}."
+            )
+
+        if grid_dim == 0:
+            return (w, h), (0, 0)
+
+        tiles = (grid_dim, grid_dim)
+        overlap_ratio_wh = (0.2, 0.2)  # 20% overlap
+        logger.info(f"Calculating slice dimensions for {tiles[0]}x{tiles[1]} tiles with {overlap_ratio_wh[0]*100}% overlap")
+
+        tile_w = math.ceil(w / tiles[1] * (1 + overlap_ratio_wh[0]))
+        tile_h = math.ceil(h / tiles[0] * (1 + overlap_ratio_wh[1]))
+
+        overlap_w = math.ceil(tile_w * overlap_ratio_wh[0])
+        overlap_h = math.ceil(tile_h * overlap_ratio_wh[1])
+
+        return (int(tile_w), int(tile_h)), (int(overlap_w), int(overlap_h))
+
+    def _init_slicer(self, frame_shape: Tuple[int, int]):
         """Initialize the inference slicer."""
+        slice_wh, overlap_wh = self._calculate_slice_dimensions(frame_shape)
         self.slicer = sv.InferenceSlicer(
-            # slice_wh=(416, 416),
-            # iou_threshold=0.5,
+            slice_wh=slice_wh,
+            overlap_ratio_wh=None,
+            overlap_wh=overlap_wh,
             callback=self._perform_inference,
             thread_workers=Config.SLICE_WORKERS,
         )
-        logger.info(f"Initialized inference slicer with {Config.SLICE_WORKERS} workers")
+        logger.info(f"Initialized inference slicer with slice_wh={slice_wh}, overlap_wh={overlap_wh} and {Config.SLICE_WORKERS} workers")
 
     def _perform_inference(self, frame_slice: np.ndarray) -> sv.Detections:
         """Perform inference on a single slice."""
@@ -186,6 +220,10 @@ class ObjectDetector:
             return sv.Detections.empty()
 
         try:
+            if self.slicer is None:
+                self._init_slicer((frame.shape[0], frame.shape[1]))
+            
+            assert self.slicer is not None
             # Run inference
             detections = self.slicer(frame)
 
