@@ -24,8 +24,10 @@ class ObjectDetector:
         self.class_names: Dict[int, str] = {}
         self.model_name = ""
         self.model_type = ""
-        self._load_model()
+        
         self.slicer = None
+        self.selected_class_names = Config.get_selected_class_names()
+        self.selected_class_ids: List[int] = []        
 
         self.tracker = sv.ByteTrack()
         self.smoother = sv.DetectionsSmoother()
@@ -39,6 +41,8 @@ class ObjectDetector:
             thickness=2,
             color_lookup=ColorLookup.INDEX,
         )
+
+        self._load_model()
 
     def _calculate_slice_dimensions(self, frame_shape: Tuple[int, int]) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         """Calculate slice and overlap dimensions based on number of tiles in frame."""
@@ -89,7 +93,8 @@ class ObjectDetector:
             conf=Config.MODEL_CONFIDENCE,
             iou=Config.MODEL_IOU_THRESHOLD,
             device=self.device,
-            verbose=False
+            verbose=False,
+            classes=self.selected_class_ids if self.selected_class_ids else None,
         )
         return sv.Detections.from_ultralytics(results[0])
 
@@ -156,6 +161,22 @@ class ObjectDetector:
                         self.class_names = {}
                 else:
                     self.class_names = {}
+
+            # Filter by selected class names if provided
+            if self.selected_class_names:
+                all_class_names_map = {v: k for k, v in self.class_names.items()}
+                self.selected_class_ids = [
+                    all_class_names_map[name]
+                    for name in self.selected_class_names
+                    if name in all_class_names_map
+                ]
+                logger.info(f"Filtering for classes: {self.selected_class_names}")
+                logger.info(f"Corresponding class IDs: {self.selected_class_ids}")
+
+                # Warn about names not found in the model
+                for name in self.selected_class_names:
+                    if name not in all_class_names_map:
+                        logger.warning(f"Class name '{name}' not found in the model's class list.")
 
             logger.info(f"{self.model_type} model loaded successfully from {model_path}. Classes: {len(self.class_names)}")
 

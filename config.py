@@ -360,3 +360,14 @@ class Config:
                 return False
         
         return True
+    
+    @staticmethod
+    def get_selected_class_names() -> List[str]:
+        """
+        Returns a list of selected class names from the environment variable SELECTED_CLASS_NAMES.
+        The environment variable should contain a comma-separated string of class names.
+        """
+        class_names_str = os.getenv("SELECTED_CLASS_NAMES")
+        if not class_names_str:
+            return []
+        return [name.strip() for name in class_names_str.split(',') if name.strip()]
