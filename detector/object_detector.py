@@ -44,6 +44,22 @@ class ObjectDetector:
 
         self.heat_map_annotator = sv.HeatMapAnnotator()
 
+        self.line_zones = []
+        for i, line in enumerate(Config.LINE_ZONES):
+            start_point = sv.Point(line[0][0], line[0][1])
+            end_point = sv.Point(line[1][0], line[1][1])
+            logger.info(f"Line zone {i}: start=({start_point.x}, {start_point.y}), end=({end_point.x}, {end_point.y})")
+            self.line_zones.append(sv.LineZone(start=start_point, end=end_point))
+
+        self.line_annotators = []
+        for i, line_zone in enumerate(self.line_zones):
+            self.line_annotators.append(sv.LineZoneAnnotator(
+                color=sv.Color.RED,
+                thickness=2,
+                text_thickness=1,
+                text_scale=0.5,
+            ))
+
         self._load_model()
 
     def _calculate_slice_dimensions(self, frame_shape: Tuple[int, int]) -> Tuple[Tuple[int, int], Tuple[int, int]]:
@@ -248,6 +264,10 @@ class ObjectDetector:
 
             detections = self.tracker.update_with_detections(detections)
             detections = self.smoother.update_with_detections(detections)
+
+            for line_zone in self.line_zones:
+                line_zone.trigger(detections=detections)
+
             return detections
 
         except Exception as e:
@@ -290,6 +310,10 @@ class ObjectDetector:
         annotated_frame = self.trace_annotator.annotate(frame.copy(), detections)
         annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
         annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
+
+        for i, line_zone in enumerate(self.line_zones):
+            annotated_frame = self.line_annotators[i].annotate(frame=annotated_frame, line_counter=line_zone)
+
         if labels:
             annotated_frame = self.label_annotator.annotate(
                 annotated_frame, detections, labels

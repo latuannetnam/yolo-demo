@@ -27,7 +27,15 @@ ZONE TYPES:
 ===========
 - ZONE_IN_POLYGONS: Entry detection zones (objects entering these areas)
 - ZONE_OUT_POLYGONS: Exit detection zones (objects leaving these areas)
-"""
+
+LINE ZONE CONFIGURATION EXAMPLES:
+================================
+
+1. Single horizontal line:
+   LINE_ZONES='[[[0, 540], [1920, 540]]]'
+
+2. Multiple lines:
+   LINE_ZONES='[[[0, 540], [1920, 540]], [[0, 800], [1920, 800]]]'"""
 
 import os
 import json
@@ -53,6 +61,8 @@ class Config:
     MODEL_IOU_THRESHOLD = float(os.getenv("MODEL_IOU_THRESHOLD", "0.45"))
     SLICE_WORKERS = int(os.getenv("SLICE_WORKERS", "1"))
     NUM_TILES = int(os.getenv("NUM_TILES", "4"))
+    LINE_ZONES_STR = os.getenv("LINE_ZONES", "[]")
+    LINE_ZONES: List[np.ndarray] = []
     
     # GPU settings
     USE_GPU = os.getenv("USE_GPU", "true").lower() == "true"
@@ -94,6 +104,19 @@ class Config:
     YOUTUBE_QUALITY = os.getenv("YOUTUBE_QUALITY", "720p")  # Video quality preference
     YOUTUBE_STREAM_TIMEOUT = int(os.getenv("YOUTUBE_STREAM_TIMEOUT", "30"))  # seconds
     PLAYBACK_FPS = int(os.getenv("PLAYBACK_FPS", "30")) # Playback FPS
+
+    @classmethod
+    def get_line_zones(cls) -> List[np.ndarray]:
+        """Parse LINE_ZONES from environment variable."""
+        try:
+            zones = json.loads(cls.LINE_ZONES_STR)
+            if not isinstance(zones, list):
+                logger.warning(f"LINE_ZONES is not a list, but {type(zones)}. No lines will be used.")
+                return []
+            return [np.array(zone, dtype=np.int32) for zone in zones]
+        except json.JSONDecodeError:
+            logger.warning(f"Invalid JSON for LINE_ZONES: {cls.LINE_ZONES_STR}. No lines will be used.")
+            return []
 
     @classmethod
     def get_full_model_name(cls) -> str:
@@ -371,3 +394,5 @@ class Config:
         if not class_names_str:
             return []
         return [name.strip() for name in class_names_str.split(',') if name.strip()]
+
+Config.LINE_ZONES = Config.get_line_zones()
