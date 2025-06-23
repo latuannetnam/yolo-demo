@@ -1,15 +1,16 @@
 """
 Camera stream handler for RTSP and local cameras.
 """
-import cv2
+import queue
 import threading
 import time
-import queue
 from typing import Optional, Union, Tuple
+import cv2
 import numpy as np
 from loguru import logger
 
 from config import Config
+from utils import get_youtube_stream_url
 
 class DemoStream:
     """Demo camera stream using sample images."""
@@ -144,10 +145,20 @@ class CameraStream:
     def start(self) -> bool:
         """Start the camera stream."""
         try:
+            stream_url = self.stream_source
+            if isinstance(self.stream_source, str) and ('youtube.com' in self.stream_source or 'youtu.be' in self.stream_source):
+                logger.info(f"Detected YouTube URL: {self.stream_source}")
+                stream_url = get_youtube_stream_url(self.stream_source)
+                if not stream_url:
+                    logger.error(f"Could not get stream URL for YouTube video: {self.stream_source}")
+                    return False
+                logger.info(f"Using YouTube stream URL: {stream_url}")
+
             # Initialize video capture with RTSP optimizations
-            if isinstance(self.stream_source, str) and self.stream_source.startswith('rtsp://'):
+            if isinstance(stream_url, str) and stream_url.startswith('rtsp://'):
+                logger.info(f"Starting RTSP camera {self.camera_id} with URL: {stream_url}")
                 # For RTSP streams, use FFmpeg backend with optimized settings
-                self.cap = cv2.VideoCapture(self.stream_source, cv2.CAP_FFMPEG)
+                self.cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
                 
                 # Set FFmpeg-specific options to prevent timeout issues
                 self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, Config.RTSP_TIMEOUT * 1000)
@@ -160,7 +171,8 @@ class CameraStream:
                 
             else:
                 # For local cameras
-                self.cap = cv2.VideoCapture(self.stream_source)
+                logger.info(f"Starting local camera {self.camera_id} with index/URL: {stream_url}")
+                self.cap = cv2.VideoCapture(stream_url)
             
             if not self.cap.isOpened():
                 logger.error(f"Failed to open camera stream: {self.stream_source}")
@@ -283,10 +295,19 @@ class CameraStream:
               # Wait a moment before reconnecting
             time.sleep(2.0)
             
+            stream_url = self.stream_source
+            if isinstance(self.stream_source, str) and ('youtube.com' in self.stream_source or 'youtu.be' in self.stream_source):
+                logger.info(f"Re-getting stream for YouTube URL: {self.stream_source}")
+                stream_url = get_youtube_stream_url(self.stream_source)
+                if not stream_url:
+                    logger.error(f"Could not get stream URL for YouTube video on reconnect: {self.stream_source}")
+                    return False
+                logger.info(f"Using new YouTube stream URL for reconnect: {stream_url}")
+
             # Re-initialize video capture with RTSP optimizations
-            if isinstance(self.stream_source, str) and self.stream_source.startswith('rtsp://'):
+            if isinstance(stream_url, str) and stream_url.startswith('rtsp://'):
                 # For RTSP streams, use FFmpeg backend with optimized settings
-                self.cap = cv2.VideoCapture(self.stream_source, cv2.CAP_FFMPEG)
+                self.cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
                 
                 # Set FFmpeg-specific options to prevent timeout issues
                 self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, Config.RTSP_TIMEOUT * 1000)
@@ -297,7 +318,7 @@ class CameraStream:
                 
             else:
                 # For local cameras
-                self.cap = cv2.VideoCapture(self.stream_source)
+                self.cap = cv2.VideoCapture(stream_url)
             
             if not self.cap.isOpened():
                 logger.error(f"Failed to reconnect camera {self.camera_id}")

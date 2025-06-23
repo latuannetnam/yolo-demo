@@ -9,13 +9,19 @@ from typing import Dict, Any, Tuple
 import cv2
 import numpy as np
 from loguru import logger
-import yt_dlp
+try:
+    import yt_dlp
+except ImportError:
+    yt_dlp = None
 
-def get_stream_url(youtube_url: str) -> str | None:
+def get_youtube_stream_url(youtube_url: str) -> str | None:
         """
         Get the stream URL for a given YouTube URL.
         Tries to get the best 1080p mp4 stream, falls back to best available.
         """
+        if not yt_dlp:
+            logger.warning("yt-dlp not found, cannot process YouTube URLs. Please install with 'pip install yt-dlp'")
+            return None
         logger.info(f"Getting stream URL for {youtube_url}")
         
         ydl_opts = {
