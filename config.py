@@ -61,6 +61,14 @@ class Config:
     MODEL_IOU_THRESHOLD = float(os.getenv("MODEL_IOU_THRESHOLD", "0.45"))
     SLICE_WORKERS = int(os.getenv("SLICE_WORKERS", "1"))
     NUM_TILES = int(os.getenv("NUM_TILES", "4"))
+
+    # Feature toggles
+    USE_SLICER = os.getenv("USE_SLICER", "true").lower() == "true"
+    USE_SMOOTHER = os.getenv("USE_SMOOTHER", "true").lower() == "true"
+    USE_LINE_ZONE = os.getenv("USE_LINE_ZONE", "true").lower() == "true"
+    USE_HEATMAP = os.getenv("USE_HEATMAP", "true").lower() == "true"
+    USE_TRACE = os.getenv("USE_TRACE", "true").lower() == "true"
+
     LINE_ZONES_STR = os.getenv("LINE_ZONES", "[]")
     LINE_ZONES: List[np.ndarray] = []
     

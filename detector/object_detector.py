@@ -30,35 +30,48 @@ class ObjectDetector:
         self.selected_class_ids: List[int] = []        
 
         self.tracker = sv.ByteTrack()
-        self.smoother = sv.DetectionsSmoother()
+        
+        if Config.USE_SMOOTHER:
+            self.smoother = sv.DetectionsSmoother()
+        else:
+            self.smoother = None
+
         self.box_annotator = sv.BoxAnnotator(color_lookup=ColorLookup.CLASS)
         self.label_annotator = sv.LabelAnnotator(
             text_color=sv.Color.BLACK, color_lookup=ColorLookup.CLASS
         )
-        self.trace_annotator = sv.TraceAnnotator(
-            position=sv.Position.CENTER,
-            trace_length=30,
-            thickness=2,
-            color_lookup=ColorLookup.CLASS,
-        )
+        if Config.USE_TRACE:
+            self.trace_annotator = sv.TraceAnnotator(
+                position=sv.Position.CENTER,
+                trace_length=30,
+                thickness=2,
+                color_lookup=ColorLookup.CLASS,
+            )
+        else:
+            self.trace_annotator = None
 
-        self.heat_map_annotator = sv.HeatMapAnnotator()
+        if Config.USE_HEATMAP:
+            self.heat_map_annotator = sv.HeatMapAnnotator()
+        else:
+            self.heat_map_annotator = None
 
         self.line_zones = []
-        for i, line in enumerate(Config.LINE_ZONES):
-            start_point = sv.Point(line[0][0], line[0][1])
-            end_point = sv.Point(line[1][0], line[1][1])
-            logger.info(f"Line zone {i}: start=({start_point.x}, {start_point.y}), end=({end_point.x}, {end_point.y})")
-            self.line_zones.append(sv.LineZone(start=start_point, end=end_point))
+        if Config.USE_LINE_ZONE:
+            for i, line in enumerate(Config.LINE_ZONES):
+                start_point = sv.Point(line[0][0], line[0][1])
+                end_point = sv.Point(line[1][0], line[1][1])
+                logger.info(f"Line zone {i}: start=({start_point.x}, {start_point.y}), end=({end_point.x}, {end_point.y})")
+                self.line_zones.append(sv.LineZone(start=start_point, end=end_point))
 
         self.line_annotators = []
-        for i, line_zone in enumerate(self.line_zones):
-            self.line_annotators.append(sv.LineZoneAnnotator(
-                color=sv.Color.RED,
-                thickness=2,
-                text_thickness=1,
-                text_scale=0.5,
-            ))
+        if Config.USE_LINE_ZONE:
+            for i, line_zone in enumerate(self.line_zones):
+                self.line_annotators.append(sv.LineZoneAnnotator(
+                    color=sv.Color.RED,
+                    thickness=2,
+                    text_thickness=1,
+                    text_scale=0.5,
+                ))
 
         self._load_model()
 
@@ -91,6 +104,9 @@ class ObjectDetector:
 
     def _init_slicer(self, frame_shape: Tuple[int, int]):
         """Initialize the inference slicer."""
+        if not Config.USE_SLICER:
+            self.slicer = None
+            return
         slice_wh, overlap_wh = self._calculate_slice_dimensions(frame_shape)
         self.slicer = sv.InferenceSlicer(
             slice_wh=slice_wh,
@@ -255,18 +271,23 @@ class ObjectDetector:
             return sv.Detections.empty()
 
         try:
-            if self.slicer is None:
-                self._init_slicer((frame.shape[0], frame.shape[1]))
-            
-            assert self.slicer is not None
-            # Run inference
-            detections = self.slicer(frame)
+            if Config.USE_SLICER:
+                if self.slicer is None:
+                    self._init_slicer((frame.shape[0], frame.shape[1]))
+                
+                assert self.slicer is not None
+                # Run inference
+                detections = self.slicer(frame)
+            else:
+                detections = self._perform_inference(frame)
 
             detections = self.tracker.update_with_detections(detections)
-            detections = self.smoother.update_with_detections(detections)
+            if self.smoother:
+                detections = self.smoother.update_with_detections(detections)
 
-            for line_zone in self.line_zones:
-                line_zone.trigger(detections=detections)
+            if Config.USE_LINE_ZONE:
+                for line_zone in self.line_zones:
+                    line_zone.trigger(detections=detections)
 
             return detections
 
@@ -307,12 +328,17 @@ class ObjectDetector:
 
                 labels.append(" ".join(label_parts))
 
-        annotated_frame = self.trace_annotator.annotate(frame.copy(), detections)
+        annotated_frame = frame.copy()
+        if self.trace_annotator:
+            annotated_frame = self.trace_annotator.annotate(annotated_frame, detections)
+        
         annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
-        annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
+        if self.heat_map_annotator:
+            annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
 
-        for i, line_zone in enumerate(self.line_zones):
-            annotated_frame = self.line_annotators[i].annotate(frame=annotated_frame, line_counter=line_zone)
+        if Config.USE_LINE_ZONE:
+            for i, line_zone in enumerate(self.line_zones):
+                annotated_frame = self.line_annotators[i].annotate(frame=annotated_frame, line_counter=line_zone)
 
         if labels:
             annotated_frame = self.label_annotator.annotate(
