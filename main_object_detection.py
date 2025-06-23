@@ -133,10 +133,7 @@ class ObjectDetectionSystem:
             
             # Update stats
             self.stats['total_frames'] += 1
-            self.stats['detection_time'] += detection_time
-            
-            
-            
+            self.stats['detection_time'] += detection_time            
             
             return frame_with_detections
             

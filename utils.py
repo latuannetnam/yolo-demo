@@ -26,7 +26,8 @@ def get_youtube_stream_url(youtube_url: str) -> str | None:
         
         ydl_opts = {
             'quiet': True,
-            'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]/best[ext=mp4][vcodec=h264]/best',
+            # 'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]/best[ext=mp4][vcodec=h264]/best',
+            'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             # 'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]',
             # 'format': 'bestvideo[vcodec^=h264][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][vcodec^=h264][height<=1080]',
             'noplaylist': True,
@@ -45,13 +46,14 @@ def get_youtube_stream_url(youtube_url: str) -> str | None:
                 
                 formats = info_dict.get('formats', [info_dict])
                 for f in reversed(formats):
-                    if f.get('ext') == 'mp4' and f.get('vcodec') != 'none' and f.get('url') and f.get('height') == 1080:
+                    logger.debug(f"Checking format: {f.get('format_note', 'unknown')} - {f.get('ext', 'unknown')} - codec:{f.get('vcodec', 'unknown')} - {f.get('height', 'unknown')}")   
+                    if f.get('ext') == 'mp4' and f.get('vcodec') and 'av01' not in f.get('vcodec', '') and f.get('url') and f.get('height') == 1080:
                         logger.info(f"Found mp4 stream: {f.get('format_note')}")
                         return f['url']
                 
-                logger.warning("No direct mp4 stream found. Falling back to the first available stream URL.")
-                if formats and formats[0].get('url'):
-                    return formats[0]['url']
+                # logger.warning("No direct mp4 stream found. Falling back to the first available stream URL.")
+                # if formats and formats[0].get('url'):
+                #     return formats[0]['url']
                 
                 logger.error("Could not find any stream URL.")
                 return None
