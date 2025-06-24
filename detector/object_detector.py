@@ -334,34 +334,9 @@ class ObjectDetector:
         Returns:
             Frame with drawn detections
         """
-        if len(detections) == 0:
-            return frame
-
-        labels = []
-        if detections.class_id is not None and detections.confidence is not None:
-            for i in range(len(detections)):
-                class_id = detections.class_id[i]
-                confidence = detections.confidence[i]
-
-                label_parts = []
-
-                if detections.tracker_id is not None:
-                    tracker_id = detections.tracker_id[i]
-                    label_parts.append(f"#{tracker_id}")
-
-                label_parts.append(self.class_names.get(class_id, f"ID {class_id}"))
-                label_parts.append(f"{confidence:.2f}")
-
-                labels.append(" ".join(label_parts))
-
         annotated_frame = frame.copy()
-        if self.trace_annotator:
-            annotated_frame = self.trace_annotator.annotate(annotated_frame, detections)
-        
-        annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
-        if self.heat_map_annotator:
-            annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
 
+        # Draw polygon zones and line zones first
         if Config.USE_POLYGON_ZONE:
             for i, annotator in enumerate(self.polygon_zone_annotators):
                 accumulated_count = len(self.zone_tracker_ids[i])
@@ -372,9 +347,53 @@ class ObjectDetector:
             for i, line_zone in enumerate(self.line_zones):
                 annotated_frame = self.line_annotators[i].annotate(frame=annotated_frame, line_counter=line_zone)
 
+        if not detections:
+            return annotated_frame
+
+        # Determine which detections to annotate based on configuration
+        if Config.USE_POLYGON_ZONE and Config.IS_ANNOTATION_IN_ZONE:
+            combined_mask = np.zeros(len(detections), dtype=bool)
+            for zone in self.polygon_zones:
+                mask = zone.trigger(detections=detections)
+                combined_mask = np.logical_or(combined_mask, mask)
+            detections_to_annotate = detections[combined_mask]
+        else:
+            detections_to_annotate = detections
+
+        # Annotate heatmap using all original detections
+        if self.heat_map_annotator:
+            annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
+
+        if not detections_to_annotate:
+            return annotated_frame
+
+        # Generate labels for the detections that will be annotated
+        labels = []
+        if detections_to_annotate.class_id is not None and detections_to_annotate.confidence is not None:
+            for i in range(len(detections_to_annotate)):
+                class_id = detections_to_annotate.class_id[i]
+                confidence = detections_to_annotate.confidence[i]
+
+                label_parts = []
+
+                if detections_to_annotate.tracker_id is not None:
+                    tracker_id = detections_to_annotate.tracker_id[i]
+                    label_parts.append(f"#{tracker_id}")
+
+                label_parts.append(self.class_names.get(class_id, f"ID {class_id}"))
+                label_parts.append(f"{confidence:.2f}")
+
+                labels.append(" ".join(label_parts))
+
+        # Annotate frame with traces, boxes, and labels for the selected detections
+        if self.trace_annotator:
+            annotated_frame = self.trace_annotator.annotate(annotated_frame, detections_to_annotate)
+        
+        annotated_frame = self.box_annotator.annotate(annotated_frame, detections_to_annotate)
+        
         if labels:
             annotated_frame = self.label_annotator.annotate(
-                annotated_frame, detections, labels
+                annotated_frame, detections_to_annotate, labels
             )
 
         return annotated_frame

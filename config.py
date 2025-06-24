@@ -68,6 +68,7 @@ class Config:
     USE_SMOOTHER = os.getenv("USE_SMOOTHER", "true").lower() == "true"
     USE_LINE_ZONE = os.getenv("USE_LINE_ZONE", "true").lower() == "true"
     USE_POLYGON_ZONE = os.getenv("USE_POLYGON_ZONE", "true").lower() == "true"
+    IS_ANNOTATION_IN_ZONE = os.getenv("IS_ANNOTATION_IN_ZONE", "true").lower() == "true"
     USE_HEATMAP = os.getenv("USE_HEATMAP", "true").lower() == "true"
     USE_TRACE = os.getenv("USE_TRACE", "true").lower() == "true"
 
