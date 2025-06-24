@@ -1,7 +1,11 @@
 import os
 import cv2
 import argparse  # New import
+from dotenv import load_dotenv
+from loguru import logger
 
+# Load environment variables from .env file
+load_dotenv(override=True)
 # --- Argument Parsing ---
 parser = argparse.ArgumentParser(description="Test RTSP stream with specified backend.")
 parser.add_argument(
@@ -14,7 +18,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 # --- Backend Specific Configuration ---
-rtsp_url = "rtsp://admin:admin123@117.0.0.18:5554/cam/realmonitor?channel=1&subtype=0"
+rtsp_url = os.getenv("CAMERA_STREAMS", "rtsp://admin:admin")
 cap = None
 
 if args.backend == "FFMPEG":
