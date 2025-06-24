@@ -55,6 +55,24 @@ class ObjectDetector:
         else:
             self.heat_map_annotator = None
 
+        self.polygon_zones = []
+        self.polygon_zone_annotators = []
+        self.zone_tracker_ids = []
+        if Config.USE_POLYGON_ZONE:
+            polygons = Config.get_zone_in_polygons()
+            for polygon in polygons:
+                self.polygon_zones.append(sv.PolygonZone(polygon=polygon))
+                self.zone_tracker_ids.append(set())
+
+            for i, zone in enumerate(self.polygon_zones):
+                self.polygon_zone_annotators.append(sv.PolygonZoneAnnotator(
+                    zone=zone,
+                    color=sv.Color.RED,
+                    thickness=2,
+                    text_thickness=1,
+                    text_scale=0.5,
+                ))
+
         self.line_zones = []
         if Config.USE_LINE_ZONE:
             for i, line in enumerate(Config.LINE_ZONES):
@@ -285,6 +303,13 @@ class ObjectDetector:
             if self.smoother:
                 detections = self.smoother.update_with_detections(detections)
 
+            if Config.USE_POLYGON_ZONE:
+                for i, zone in enumerate(self.polygon_zones):
+                    mask = zone.trigger(detections=detections)
+                    if detections.tracker_id is not None:
+                        for tracker_id in detections.tracker_id[mask]:
+                            self.zone_tracker_ids[i].add(tracker_id)
+
             if Config.USE_LINE_ZONE:
                 for line_zone in self.line_zones:
                     line_zone.trigger(detections=detections)
@@ -335,6 +360,12 @@ class ObjectDetector:
         annotated_frame = self.box_annotator.annotate(annotated_frame, detections)
         if self.heat_map_annotator:
             annotated_frame = self.heat_map_annotator.annotate(annotated_frame, detections)
+
+        if Config.USE_POLYGON_ZONE:
+            for i, annotator in enumerate(self.polygon_zone_annotators):
+                accumulated_count = len(self.zone_tracker_ids[i])
+                label = f"Zone {i + 1}: {accumulated_count}"
+                annotated_frame = annotator.annotate(scene=annotated_frame, label=label)
 
         if Config.USE_LINE_ZONE:
             for i, line_zone in enumerate(self.line_zones):

@@ -40,6 +40,7 @@ LINE ZONE CONFIGURATION EXAMPLES:
 import os
 import json
 import numpy as np
+import torch
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 from loguru import logger
@@ -66,6 +67,7 @@ class Config:
     USE_SLICER = os.getenv("USE_SLICER", "true").lower() == "true"
     USE_SMOOTHER = os.getenv("USE_SMOOTHER", "true").lower() == "true"
     USE_LINE_ZONE = os.getenv("USE_LINE_ZONE", "true").lower() == "true"
+    USE_POLYGON_ZONE = os.getenv("USE_POLYGON_ZONE", "true").lower() == "true"
     USE_HEATMAP = os.getenv("USE_HEATMAP", "true").lower() == "true"
     USE_TRACE = os.getenv("USE_TRACE", "true").lower() == "true"
 
@@ -230,32 +232,26 @@ class Config:
                 zones = []
                 
                 for zone_coords in zones_data:
-                    if isinstance(zone_coords, list) and len(zone_coords) >=3:
-                        # Convert to numpy array with proper data type
-                        zone_array = np.array(zone_coords, dtype=np.int32)
-                        zones.append(zone_array)
-                        logger.info(f"Loaded zone from env: {zone_array.tolist()}")
-                    else:
-                        logger.warning(f"Invalid zone coordinates in env: {zone_coords}")
+                    if cls.validate_zone_coordinates(zone_coords):
+                        zones.append(np.array(zone_coords, dtype=np.int32))
                 
                 if zones:
-                    logger.info(f"Successfully loaded {len(zones)} zones from environment variable")
+                    logger.info(f"Loaded {len(zones)} entry zones from environment variable.")
                     return zones
                 else:
-                    logger.warning("No valid zones found in environment variable, using defaults")
+                    logger.warning("No valid zones found in ZONE_IN_POLYGONS.")
                     
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse ZONE_IN_POLYGONS from environment: {e}")
                 logger.info("Using default zone configuration")
             except Exception as e:
-                logger.error(f"Error loading zones from environment: {e}")
-                logger.info("Using default zone configuration")
+                logger.error(f"Error processing ZONE_IN_POLYGONS: {e}")
         
         # Default zones if environment variable not set or invalid
         default_zones = [
-            # np.array([[806, 121], [1390, 121], [1390, 77], [806, 77]], dtype=np.int32),
-            # np.array([[690, 300], [1530, 300], [1530, 230], [690, 230]], dtype=np.int32),
-            # np.array([[271, 681], [520, 681], [520, 450], [271, 450]], dtype=np.int32),
+            np.array([[806, 121], [1390, 121], [1390, 77], [806, 77]], dtype=np.int32),
+            np.array([[690, 300], [1530, 300], [1530, 230], [690, 230]], dtype=np.int32),
+            np.array([[271, 681], [520, 681], [520, 450], [271, 450]], dtype=np.int32),
         ]
         
         logger.info(f"Using {len(default_zones)} default zones")
@@ -295,27 +291,20 @@ class Config:
         
         if zones_env:
             try:
-                # Parse JSON string from environment variable
                 zones_data = json.loads(zones_env)
                 zones = []
-                
                 for zone_coords in zones_data:
-                    if isinstance(zone_coords, list) and len(zone_coords) >= 3:
-                        # Convert to numpy array with proper data type
-                        zone_array = np.array(zone_coords, dtype=np.int32)
-                        zones.append(zone_array)
-                        logger.info(f"Loaded exit zone from env: {zone_array.tolist()}")
-                    else:
-                        logger.warning(f"Invalid exit zone coordinates in env: {zone_coords}")
+                    if cls.validate_zone_coordinates(zone_coords):
+                        zones.append(np.array(zone_coords, dtype=np.int32))
                 
                 if zones:
-                    logger.info(f"Successfully loaded {len(zones)} exit zones from environment variable")
+                    logger.info(f"Loaded {len(zones)} exit zones from environment variable.")
                     return zones
                     
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse ZONE_OUT_POLYGONS from environment: {e}")
+                logger.error(f"Failed to parse ZONE_OUT_POLYGONS: {e}")
             except Exception as e:
-                logger.error(f"Error loading exit zones from environment: {e}")
+                logger.error(f"Error processing ZONE_OUT_POLYGONS: {e}")
         
         # Return empty list for exit zones (entry-only mode)
         logger.info("No exit zones configured - running in entry-only mode")
@@ -383,15 +372,15 @@ class Config:
         
         for point in zone:
             if not isinstance(point, list) or len(point) != 2:
-                logger.warning(f"Each point must be [x, y] coordinate pair, got {point}")
+                logger.warning(f"Invalid point format in zone: {point}. Each point must be a list of 2 coordinates.")
                 return False
             
             if not all(isinstance(coord, (int, float)) and coord >= 0 for coord in point):
-                logger.warning(f"Coordinates must be non-negative numbers, got {point}")
+                logger.warning(f"Invalid coordinates in point: {point}. Coordinates must be non-negative numbers.")
                 return False
-        
-        return True
     
+        return True
+
     @staticmethod
     def get_selected_class_names() -> List[str]:
         """
