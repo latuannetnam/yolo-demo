@@ -60,36 +60,37 @@ class ObjectDetector:
         self.zone_tracker_ids = []
         if Config.USE_POLYGON_ZONE:
             polygons = Config.get_zone_in_polygons()
+            # Initialize zones, trackers, and annotators in a single pass
             for polygon in polygons:
-                self.polygon_zones.append(sv.PolygonZone(polygon=polygon))
+                zone = sv.PolygonZone(polygon=polygon)
+                self.polygon_zones.append(zone)
                 self.zone_tracker_ids.append(set())
+                self.polygon_zone_annotators.append(
+                    sv.PolygonZoneAnnotator(
+                        zone=zone,
+                        color=sv.Color.RED,
+                        thickness=2,
+                        text_thickness=1,
+                        text_scale=0.5,
+                    )
+                )
 
-            for i, zone in enumerate(self.polygon_zones):
-                self.polygon_zone_annotators.append(sv.PolygonZoneAnnotator(
-                    zone=zone,
-                    color=sv.Color.RED,
-                    thickness=2,
-                    text_thickness=1,
-                    text_scale=0.5,
-                ))
-
+        # Optimized initialization of line zones and annotators
         self.line_zones = []
-        if Config.USE_LINE_ZONE:
-            for i, line in enumerate(Config.LINE_ZONES):
-                start_point = sv.Point(line[0][0], line[0][1])
-                end_point = sv.Point(line[1][0], line[1][1])
-                logger.info(f"Line zone {i}: start=({start_point.x}, {start_point.y}), end=({end_point.x}, {end_point.y})")
-                self.line_zones.append(sv.LineZone(start=start_point, end=end_point))
-
         self.line_annotators = []
+
         if Config.USE_LINE_ZONE:
-            for i, line_zone in enumerate(self.line_zones):
-                self.line_annotators.append(sv.LineZoneAnnotator(
-                    color=sv.Color.RED,
-                    thickness=2,
-                    text_thickness=1,
-                    text_scale=0.5,
-                ))
+            for idx, (start_coords, end_coords) in enumerate(Config.LINE_ZONES):
+                # Unpack points and create zones
+                sp = sv.Point(*start_coords)
+                ep = sv.Point(*end_coords)
+                logger.info(f"Line zone {idx}: start=({sp.x}, {sp.y}), end=({ep.x}, {ep.y})")
+
+                self.line_zones.append(sv.LineZone(start=sp, end=ep))
+                self.line_annotators.append(sv.LineZoneAnnotator(color=sv.Color.RED,
+                                                                 thickness=2,
+                                                                 text_thickness=1,
+                                                                 text_scale=0.5))
 
         self._load_model()
 
