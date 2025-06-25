@@ -17,7 +17,7 @@ except ImportError:
 def get_youtube_stream_url(youtube_url: str) -> str | None:
         """
         Get the stream URL for a given YouTube URL.
-        Tries to get the best 1080p mp4 stream, falls back to best available.
+        Tries to get the best resolution mp4 stream, falls back to best available.
         """
         if not yt_dlp:
             logger.warning("yt-dlp not found, cannot process YouTube URLs. Please install with 'pip install yt-dlp'")
@@ -26,10 +26,7 @@ def get_youtube_stream_url(youtube_url: str) -> str | None:
         
         ydl_opts = {
             'quiet': True,
-            # 'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]/best[ext=mp4][vcodec=h264]/best',
-            'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-            # 'format': 'bestvideo[ext=mp4][height<=1080][vcodec=h264]+bestaudio[ext=m4a]',
-            # 'format': 'bestvideo[vcodec^=h264][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][vcodec^=h264][height<=1080]',
+            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
             'noplaylist': True,
         }
 
@@ -41,19 +38,16 @@ def get_youtube_stream_url(youtube_url: str) -> str | None:
                     logger.error("yt-dlp failed to extract info.")
                     return None
                 
-                # if 'url' in info_dict:
-                #     return info_dict['url']
-                
                 formats = info_dict.get('formats', [info_dict])
                 for f in reversed(formats):
                     logger.debug(f"Checking format: {f.get('format_note', 'unknown')} - {f.get('ext', 'unknown')} - codec:{f.get('vcodec', 'unknown')} - {f.get('height', 'unknown')}")   
-                    if f.get('ext') == 'mp4' and f.get('vcodec') and 'av01' not in f.get('vcodec', '') and f.get('url') and f.get('height') == 1080:
+                    if f.get('ext') == 'mp4' and f.get('vcodec') and 'av01' not in f.get('vcodec', '') and f.get('url'):
                         logger.info(f"Found mp4 stream: {f.get('format_note')}")
                         return f['url']
                 
-                # logger.warning("No direct mp4 stream found. Falling back to the first available stream URL.")
-                # if formats and formats[0].get('url'):
-                #     return formats[0]['url']
+                logger.warning("No direct mp4 stream found. Falling back to the best available stream URL.")
+                if 'url' in info_dict:
+                    return info_dict['url']
                 
                 logger.error("Could not find any stream URL.")
                 return None
