@@ -60,6 +60,7 @@ class Config:
     INITIAL_PROMPTS = os.getenv("INITIAL_PROMPTS", "car")  # Default prompts for detection
     MODEL_CONFIDENCE = float(os.getenv("MODEL_CONFIDENCE", "0.5"))
     MODEL_IOU_THRESHOLD = float(os.getenv("MODEL_IOU_THRESHOLD", "0.45"))
+    USE_GRID_SLIDING = os.getenv("USE_GRID_SLIDING", "true").lower() == "true"  # Use grid sliding for detection
     SLICE_WORKERS = int(os.getenv("SLICE_WORKERS", "1"))
     NUM_TILES = int(os.getenv("NUM_TILES", "4"))
 

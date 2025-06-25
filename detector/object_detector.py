@@ -121,12 +121,56 @@ class ObjectDetector:
 
         return (int(slice_w), int(math.ceil(slice_h))), (int(overlap_w), int(math.ceil(overlap_h)))
 
+    def _calculate_grid_slice_dimensions(self, frame_shape: Tuple[int, int]) -> Tuple[Tuple[int, int], Tuple[int, int]]:
+        """Calculate slice and overlap dimensions for grid-based sliding."""
+        h, w = frame_shape
+        num_tiles = Config.NUM_TILES
+
+        if num_tiles <= 0:
+            logger.error("Number of tiles must be a positive integer.")
+            return (w, h), (0, 0)
+
+        if num_tiles == 1:
+            return (w, h), (0, 0)
+
+        # Calculate grid dimensions - find the closest square grid
+        grid_rows = int(math.sqrt(num_tiles))
+        grid_cols = math.ceil(num_tiles / grid_rows)
+        
+        # Ensure we have enough grid cells
+        while grid_rows * grid_cols < num_tiles:
+            if grid_cols <= grid_rows:
+                grid_cols += 1
+            else:
+                grid_rows += 1
+
+        overlap_ratio = 0.2  # 20% overlap in both directions
+
+        # Calculate slice dimensions for grid
+        slice_w = w / (grid_cols - (grid_cols - 1) * overlap_ratio) if grid_cols > 1 else w
+        slice_h = h / (grid_rows - (grid_rows - 1) * overlap_ratio) if grid_rows > 1 else h
+        
+        overlap_w = slice_w * overlap_ratio if grid_cols > 1 else 0
+        overlap_h = slice_h * overlap_ratio if grid_rows > 1 else 0
+
+        logger.info(
+            f"Calculating grid slice dimensions for {num_tiles} tiles in {grid_rows}x{grid_cols} grid with {overlap_ratio*100:.0f}% overlap"
+        )
+
+        return (int(math.ceil(slice_w)), int(math.ceil(slice_h))), (int(math.ceil(overlap_w)), int(math.ceil(overlap_h)))
+
     def _init_slicer(self, frame_shape: Tuple[int, int]):
         """Initialize the inference slicer."""
         if not Config.USE_SLICER:
             self.slicer = None
             return
-        slice_wh, overlap_wh = self._calculate_slice_dimensions(frame_shape)
+        
+        # Choose calculation method based on USE_GRID_SLIDING configuration
+        if Config.USE_GRID_SLIDING:
+            slice_wh, overlap_wh = self._calculate_grid_slice_dimensions(frame_shape)
+        else:
+            slice_wh, overlap_wh = self._calculate_slice_dimensions(frame_shape)
+            
         self.slicer = sv.InferenceSlicer(
             slice_wh=slice_wh,
             overlap_ratio_wh=None,
@@ -134,7 +178,9 @@ class ObjectDetector:
             callback=self._perform_inference,
             thread_workers=Config.SLICE_WORKERS,
         )
-        logger.info(f"Initialized inference slicer with slice_wh={slice_wh}, overlap_wh={overlap_wh} and {Config.SLICE_WORKERS} workers")
+        
+        slice_method = "grid" if Config.USE_GRID_SLIDING else "horizontal"
+        logger.info(f"Initialized inference slicer ({slice_method} method) with slice_wh={slice_wh}, overlap_wh={overlap_wh} and {Config.SLICE_WORKERS} workers")
 
     def _perform_inference(self, frame_slice: np.ndarray) -> sv.Detections:
         """Perform inference on a single slice."""
